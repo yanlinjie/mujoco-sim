@@ -14,7 +14,7 @@
                                    {"points": [[x, y], ...], "final_yaw": 可选}
                                  可选 "force": true（折线穿过障碍也照走）
     GET  /walk                   当前（或最近一次）行走的状态：running / finished，日志、结果、位姿
-    POST /walk/stop              停止行走（机器狗先站稳再停）
+    POST /walk/stop              停止行走（可选 walk_id 核对控制权，先站稳再停）
     POST /control/start          创建持续轨迹会话；可选 trajectory_timeout_s
     POST /control/trajectory     局部／地图航点、坐标系、采集时间及位姿；同会话滚动替换参考轨迹
     POST /control/command        /control/trajectory 的航点接口别名
@@ -557,8 +557,11 @@ class SimService:
                 proc.kill()
                 proc.wait()
 
-    def stop_walk(self):
+    def stop_walk(self, req=None):
         with self.lock:
+            walk_id = (req or {}).get("walk_id")
+            if walk_id is not None and (self.walk is None or self.walk["id"] != walk_id):
+                raise ServiceError("walk_id 已更换，拒绝停止其他行走", 409)
             if not self.walk_running():
                 return {"ok": True, "message": "当前没有在行走", "walk": self.walk_summary()}
             self._stop_walk()
@@ -669,7 +672,7 @@ def make_handler(svc):
                 return self._send({"ok": False, "error": f"请求体不是有效的 JSON：{e}"}, 400)
             routes = {"/simulator/start": lambda: svc.start_simulator(req, self._host()),
                       "/simulator/stop": svc.stop_simulator,
-                      "/walk": lambda: svc.start_walk(req), "/walk/stop": svc.stop_walk,
+                      "/walk": lambda: svc.start_walk(req), "/walk/stop": lambda: svc.stop_walk(req),
                       "/control/start": lambda: svc.start_control(req),
                       "/control/command": lambda: svc.trajectory_control(req),
                       "/control/trajectory": lambda: svc.trajectory_control(req),

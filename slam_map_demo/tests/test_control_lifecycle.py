@@ -61,6 +61,15 @@ class ServiceTests(unittest.TestCase):
         finally:
             self.service.walk = None
 
+    def test_previous_walk_id_cannot_stop_a_new_walk(self):
+        self.service.walk = {"id": "new", "proc": SimpleNamespace(poll=lambda: None)}
+        try:
+            with patch.object(self.service, "_stop_walk") as stop:
+                self.error(409, self.service.stop_walk, {"walk_id": "old"})
+                stop.assert_not_called()
+        finally:
+            self.service.walk = None
+
     def test_other_controller_and_invalid_state_block_start(self):
         self.service.other_controllers = lambda: [{"pid": 1}]
         self.error(409, self.service.start_control, {})
