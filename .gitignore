@@ -1,0 +1,17 @@
+/output/
+.venv*
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+/slam_map_demo/maps/
+/slam_map_demo/downloads/
+build/
+MUJOCO_LOG.TXT

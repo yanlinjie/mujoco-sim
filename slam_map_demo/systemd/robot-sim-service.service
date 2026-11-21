@@ -1,0 +1,21 @@
+# MuJoCo 仿真控制服务（HTTP 8770），供局域网其他电脑远程启动仿真器、让 Go2 沿路线行走。
+# 安装：ln -sf $PWD/systemd/robot-sim-service.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#       systemctl --user enable --now robot-sim-service
+# 换地图：改下面 ExecStart 中的地图包路径（须与 A* 容器的 NAV_MAP 一致），再 systemctl --user restart robot-sim-service
+# 日志：journalctl --user -u robot-sim-service -f
+# 仿真器窗口要显示在桌面上，所以用用户级服务，从用户会话继承 DISPLAY / XAUTHORITY；
+# 开机后用户还没登录桌面时服务也会运行，但此时启动仿真器会失败（没有可用的显示）。
+[Unit]
+Description=Go2 MuJoCo simulation control service (HTTP 8770)
+After=default.target
+
+[Service]
+WorkingDirectory=/home/oc/projects/robot/slam_map_demo
+ExecStart=/home/oc/miniconda3/envs/unitree-mujoco/bin/python -I -u scripts/sim_service.py maps/room1110/2026-11-11.2 --host 0.0.0.0 --port 8770
+Restart=on-failure
+RestartSec=5
+# 只停服务进程本身：仿真器和行走子进程各自独立运行，服务重启不会把仿真器关掉
+KillMode=process
+
+[Install]
+WantedBy=default.target

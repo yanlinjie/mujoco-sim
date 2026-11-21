@@ -1,0 +1,9 @@
+# 大数据目录不纳入版本管理
+maps/
+downloads/
+output/
+# 旧式手工备份与缓存
+*.bak*
+__pycache__/
+*.pyc
+MUJOCO_LOG.TXT

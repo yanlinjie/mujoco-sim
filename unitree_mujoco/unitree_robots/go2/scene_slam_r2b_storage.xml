@@ -1,0 +1,50 @@
+<mujoco model="go2 scene on map r2b_storage">
+  <!-- 自动生成：slam_map_demo/scripts/map_to_mujoco.py，请勿手改 -->
+  <include file="go2.xml"/>
+
+  <statistic center="0 0 0.5" extent="4"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.4 0.4 0.4" specular="0 0 0"/>
+    <global azimuth="-130" elevation="-30" offwidth="1280" offheight="960"/>
+    <quality shadowsize="0"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <material name="map_material" rgba="0.88 0.88 0.90 1.0" specular="0.2" shininess="0.1"/>
+    <mesh name="map_mesh" file="/home/oc/projects/robot/slam_map_demo/maps/r2b_storage/2026-10-28.2/mesh/scene.obj"/>
+    <hfield name="map_hfield" file="/home/oc/projects/robot/slam_map_demo/maps/r2b_storage/2026-10-28.2/mujoco/collision_hfield.bin" size="10.1250 6.0000 1.5000 0.1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 3" dir="0 0 -1" directional="true"/>
+    <!-- 视觉：地图 Mesh，不参与碰撞 -->
+    <geom name="map_visual" type="mesh" mesh="map_mesh" material="map_material"
+          contype="0" conaffinity="0" group="1"/>
+    <!-- 碰撞：由点云生成的高度场，放在第 3 组，查看器中默认隐藏，按数字键 3 显示 -->
+    <geom name="map_collision" type="hfield" hfield="map_hfield" pos="0.3250 -0.2000 0"
+          group="3" rgba="0.8 0.6 0.4 0.6"/>
+    <!-- 点位库标记：绿色圆盘为站位，红色短条指向朝向 -->
+    <body name="wp_01" pos="0.0 0.0 0.000" quat="1.0000 0 0 -0.0000">
+      <site name="wp_01_disk" type="cylinder" size="0.12 0.005" pos="0 0 0.005" rgba="0.1 0.9 0.2 0.8"/>
+      <site name="wp_01_heading" type="box" size="0.15 0.02 0.006" pos="0.15 0 0.012" rgba="0.9 0.1 0.1 0.9"/>
+    </body>
+    <body name="wp_02" pos="1.527 0.005 0.000" quat="0.9999 0 0 0.0105">
+      <site name="wp_02_disk" type="cylinder" size="0.12 0.005" pos="0 0 0.005" rgba="0.1 0.9 0.2 0.8"/>
+      <site name="wp_02_heading" type="box" size="0.15 0.02 0.006" pos="0.15 0 0.012" rgba="0.9 0.1 0.1 0.9"/>
+    </body>
+    <body name="wp_03" pos="3.075 0.027 0.000" quat="0.9990 0 0 -0.0445">
+      <site name="wp_03_disk" type="cylinder" size="0.12 0.005" pos="0 0 0.005" rgba="0.1 0.9 0.2 0.8"/>
+      <site name="wp_03_heading" type="box" size="0.15 0.02 0.006" pos="0.15 0 0.012" rgba="0.9 0.1 0.1 0.9"/>
+    </body>
+    <body name="wp_04" pos="4.601 -0.056 0.000" quat="0.9999 0 0 0.0110">
+      <site name="wp_04_disk" type="cylinder" size="0.12 0.005" pos="0 0 0.005" rgba="0.1 0.9 0.2 0.8"/>
+      <site name="wp_04_heading" type="box" size="0.15 0.02 0.006" pos="0.15 0 0.012" rgba="0.9 0.1 0.1 0.9"/>
+    </body>
+    <body name="wp_05" pos="6.103 -0.022 0.000" quat="0.9531 0 0 0.3027">
+      <site name="wp_05_disk" type="cylinder" size="0.12 0.005" pos="0 0 0.005" rgba="0.1 0.9 0.2 0.8"/>
+      <site name="wp_05_heading" type="box" size="0.15 0.02 0.006" pos="0.15 0 0.012" rgba="0.9 0.1 0.1 0.9"/>
+    </body>
+  </worldbody>
+</mujoco>

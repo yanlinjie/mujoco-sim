@@ -1,0 +1,44 @@
+<mujoco model="go2 scene on map go2_room_selfbuilt">
+  <!-- 自动生成：slam_map_demo/scripts/map_to_mujoco.py，请勿手改 -->
+  <include file="go2.xml"/>
+
+  <statistic center="0 0 0.5" extent="4"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.4 0.4 0.4" specular="0 0 0"/>
+    <global azimuth="-130" elevation="-30" offwidth="1280" offheight="960"/>
+    <quality shadowsize="0"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <material name="map_material" rgba="0.20 0.30 0.45 1.0" specular="0.2" shininess="0.1"/>
+    <mesh name="map_mesh" file="/home/oc/projects/robot/slam_map_demo/maps/go2_room_selfbuilt/2026-11-09.2/mesh/scene.obj"/>
+    <hfield name="map_hfield" file="/home/oc/projects/robot/slam_map_demo/maps/go2_room_selfbuilt/2026-11-09.2/mujoco/collision_hfield.bin" size="7.3000 9.5500 1.4987 0.1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 3" dir="0 0 -1" directional="true"/>
+    <!-- 视觉：地图 Mesh，不参与碰撞 -->
+    <geom name="map_visual" type="mesh" mesh="map_mesh" material="map_material"
+          contype="0" conaffinity="0" group="1"/>
+    <!-- 碰撞：由点云生成的高度场，放在第 3 组，查看器中默认隐藏，按数字键 3 显示。
+         高度场下移 0.005 m，地面由 z=0 的平面承担，见脚本开头说明 -->
+    <geom name="map_floor" type="plane" size="0 0 0.05" group="3" rgba="0.6 0.6 0.6 0.6"/>
+    <geom name="map_collision" type="hfield" hfield="map_hfield" pos="2.5000 2.2500 -0.005"
+          group="3" rgba="0.8 0.6 0.4 0.6"/>
+    <!-- 点位库标记：绿色圆盘为站位，红色短条指向朝向 -->
+    <body name="wp_00" pos="0.0 0.0 0.000" quat="1.0000 0 0 0.0000">
+      <site name="wp_00_disk" type="cylinder" size="0.12 0.005" pos="0 0 0.005" rgba="0.1 0.9 0.2 0.8"/>
+      <site name="wp_00_heading" type="box" size="0.15 0.02 0.006" pos="0.15 0 0.012" rgba="0.9 0.1 0.1 0.9"/>
+    </body>
+    <body name="wp_01" pos="4.7 6.8 0.000" quat="1.0000 0 0 0.0050">
+      <site name="wp_01_disk" type="cylinder" size="0.12 0.005" pos="0 0 0.005" rgba="0.1 0.9 0.2 0.8"/>
+      <site name="wp_01_heading" type="box" size="0.15 0.02 0.006" pos="0.15 0 0.012" rgba="0.9 0.1 0.1 0.9"/>
+    </body>
+    <body name="wp_02" pos="-0.372 4.545 0.000" quat="0.0328 0 0 0.9995">
+      <site name="wp_02_disk" type="cylinder" size="0.12 0.005" pos="0 0 0.005" rgba="0.1 0.9 0.2 0.8"/>
+      <site name="wp_02_heading" type="box" size="0.15 0.02 0.006" pos="0.15 0 0.012" rgba="0.9 0.1 0.1 0.9"/>
+    </body>
+  </worldbody>
+</mujoco>

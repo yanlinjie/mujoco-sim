@@ -1,0 +1,51 @@
+# r2b_storage_ns 地图的场景图配置（地图坐标系，单位米）。
+# 区域：给出名称和落在该区域里的若干种子点；每个地点按沿通行网络的距离归到最近的种子所在区域。
+# 狭长的区域要沿长度方向多给几个种子，否则会被相邻区域“吃掉”一截。
+regions:
+  - id: region_main
+    name: 主通道
+    aliases: [主通道, 走廊, 主走廊, 通道, corridor, main aisle]
+    seeds: [[0.0, 0.0], [1.5, 0.0], [3.0, -0.1], [4.2, 0.1]]
+  - id: region_junction
+    name: 丁字路口
+    aliases: [丁字路口, 路口, 岔路口, 拐角, junction, intersection]
+    seeds: [[5.05, 0.15]]
+  - id: region_north
+    name: 北侧通道
+    aliases: [北侧通道, 北通道, 左边通道, 左侧通道, 北边, north aisle]
+    seeds: [[5.15, 1.3]]
+  - id: region_east
+    name: 东侧通道
+    aliases: [东侧通道, 东通道, 右边通道, 右侧通道, 东边, east aisle]
+    seeds: [[5.9, 0.2]]
+
+# 点位的额外别名（点位本身来自地图包的 waypoints.yaml）
+waypoint_aliases:
+  wp_01: [充电桩, 原点, 起点, 出生点, 家, dock, home]
+
+# 物体词表：prompt 是给开放词汇检测器的英文类别名；name 是中文名；aliases 用于文字匹配；
+# 词表按场景裁剪：本场景没有叉车（黄色的是搬运机器人），列入词表会让检测器把机器人和推车误认成叉车。
+# dynamic: 可能移动的物体（建图时的位置不一定可靠，可以查询但不宜作长期地标）；exclude: 不写入场景图。
+vocabulary:
+  - {prompt: shelf, name: 货架, aliases: [货架, 架子, 置物架, 料架, shelf, rack]}
+  - {prompt: cardboard box, name: 纸箱, aliases: [纸箱, 箱子, 纸盒, 快递箱, box, carton]}
+  - {prompt: wooden crate, name: 木箱, aliases: [木箱, 木制包装箱, 木头箱子, 木质箱, crate]}
+  - {prompt: pallet, name: 托盘, aliases: [托盘, 栈板, 卡板, pallet]}
+  - {prompt: plastic crate, name: 塑料周转箱, aliases: [周转箱, 塑料箱, 塑料筐, 物流箱, tote]}
+  - {prompt: cart, name: 手推车, aliases: [手推车, 推车, 小推车, 平板车, cart, trolley]}
+  - {prompt: robot, name: 机器人, aliases: [机器人, 搬运机器人, 小车机器人, AGV, robot, 叉车], dynamic: true}
+  - {prompt: checkerboard, name: 标定板, aliases: [标定板, 二维码, 二维码板, 棋盘格, 标定墙, calibration board]}
+  - {prompt: pillar, name: 柱子, aliases: [柱子, 立柱, 支柱, pillar, column]}
+  - {prompt: trash can, name: 垃圾桶, aliases: [垃圾桶, 垃圾箱, trash can, bin]}
+  - {prompt: door, name: 门, aliases: [门, 门口, 出口, door]}
+  - {prompt: person, name: 人, aliases: [人, 行人, person], exclude: true}
+
+detection:
+  box_threshold: 0.35
+  text_threshold: 0.25
+  frame_step: 3          # 每隔几帧取一张左目图像
+  min_detections: 3      # 至少在几张图中被检测到才算一个物体
+  merge_overlap: 0.2     # 同类别的两次检测体素重叠比例（相对较小者）超过此值视为同一物体
+  merge_iou_cross_label: 0.4  # 不同类别时按交并比判断（同一物体被叫成不同名字）
+  min_voxel_share: 0.2   # 物体只保留被至少这一比例的检测命中过的体素
+  max_person_overlap: 0.15  # 检测框内行人像素超过此比例则丢弃（行人手里拿着的东西）
