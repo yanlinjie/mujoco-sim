@@ -1,0 +1,16 @@
+waypoints:
+- id: wp_01
+  name: 原点（充电桩）
+  stand_pose:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    yaw: 0.0
+  lookat:
+    x: 1.0
+    y: 0.0
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3

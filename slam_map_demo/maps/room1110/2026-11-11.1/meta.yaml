@@ -1,0 +1,7 @@
+map_id: room1110
+version: 2026-11-11.1
+up_axis: z
+units: meter
+source: room01：XT16 激光几何先验 + D435i 双目深度 + 3DGS 外观学习耦合重建；地面与墙根由激光网格补全
+gravity_correction_deg: 0.03
+hfield_margin: 40

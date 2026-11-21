@@ -1,0 +1,5 @@
+# 与 waypoint_picks.txt 中的点对一一对应，顺序即巡航顺序
+广告牌 | billboard
+厕所通道 | restroom, corridor
+男厕所门口 | restroom, men, door
+母婴室 | nursing room, door

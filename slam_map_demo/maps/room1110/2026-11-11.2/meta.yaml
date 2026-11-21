@@ -1,0 +1,8 @@
+map_id: room1110
+version: 2026-11-11.2
+up_axis: z
+units: meter
+source: room01：XT16 激光几何先验 + D435i 双目深度 + 3DGS 外观学习耦合重建；地面与墙根由激光网格补全
+gravity_correction_deg: 0.03
+hfield_margin: 40
+frame: 由 2026-11-11.1 换系：原点 (0.251, 0.087)、+x 朝向 -139.25°（旧坐标系），点选来源见 frame_pick.yaml

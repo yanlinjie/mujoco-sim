@@ -1,0 +1,95 @@
+map_id: room1110
+map_version: 2026-11-11.2
+waypoints:
+- id: wp_00
+  name: 充电桩（地图原点）
+  semantic_tags:
+  - dock
+  stand_pose:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    yaw: 0.0
+  neighbors: []
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_01
+  name: 广告牌
+  semantic_tags:
+  - billboard
+  stand_pose:
+    x: 8.05
+    y: -5.05
+    z: 0.0
+    yaw: -1.428
+  lookat:
+    x: 8.075
+    y: -5.226
+    z: 0.5
+  neighbors: []
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_02
+  name: 厕所通道
+  semantic_tags:
+  - restroom
+  - corridor
+  stand_pose:
+    x: 5.858
+    y: 0.179
+    z: 0.0
+    yaw: -2.967
+  lookat:
+    x: 4.873
+    y: 0.005
+    z: 0.5
+  neighbors:
+  - wp_03
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_03
+  name: 男厕所门口
+  semantic_tags:
+  - restroom
+  - men
+  - door
+  stand_pose:
+    x: 5.813
+    y: 2.207
+    z: 0.0
+    yaw: 3.048
+  lookat:
+    x: 5.35
+    y: 2.25
+    z: 0.5
+  neighbors:
+  - wp_02
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_04
+  name: 母婴室
+  semantic_tags:
+  - nursing room
+  - door
+  stand_pose:
+    x: 0.612
+    y: -4.515
+    z: 0.0
+    yaw: 3.118
+  lookat:
+    x: 0.0
+    y: -4.5
+    z: 0.5
+  neighbors: []
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3

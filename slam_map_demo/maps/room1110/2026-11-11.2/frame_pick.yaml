@@ -1,0 +1,6 @@
+map_dir: /home/oc/projects/robot/slam_map_demo/maps/room1110/2026-11-11.1
+source: 'CloudCompare Point list picking: /home/oc/下载/picking_list_room1101.txt 第 1、2 点（副本 output/room1110_frame_pick_raw.txt；第 3~6 点为广告牌、厕所通道、男厕所门口、母婴室）'
+picked_origin: [0.446412, -0.139945]
+origin: [0.250570, 0.087313]
+x_toward: [-3.247780, -2.927435]
+note: 坐标均为 2026-11-11.1 地图包坐标系；点选原点离墙仅 0.18 m（机器狗出生和规划起点都不合格），经用户同意沿新 -y 方向平移 0.3 m，x 方向不变；新坐标 = Rz(-yaw) @ (旧坐标 - origin)

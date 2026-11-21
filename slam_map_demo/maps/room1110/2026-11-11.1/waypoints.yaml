@@ -1,0 +1,151 @@
+waypoints:
+- id: wp_01
+  name: 原点（采集起点）
+  stand_pose:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    yaw: 0.0
+  lookat:
+    x: 1.0
+    y: 0.0
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_02
+  name: 轨迹点 2
+  stand_pose:
+    x: -2.9
+    y: -2.3
+    z: 0.0
+    yaw: -2.319
+  lookat:
+    x: -3.58
+    y: -3.033
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_03
+  name: 轨迹点 3
+  stand_pose:
+    x: -4.05
+    y: -3.65
+    z: 0.0
+    yaw: 0.032
+  lookat:
+    x: -3.051
+    y: -3.618
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_04
+  name: 轨迹点 4
+  stand_pose:
+    x: -5.8
+    y: -4.3
+    z: 0.0
+    yaw: -1.888
+  lookat:
+    x: -6.112
+    y: -5.25
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_05
+  name: 轨迹点 5
+  stand_pose:
+    x: -8.65
+    y: -2.65
+    z: 0.0
+    yaw: -1.881
+  lookat:
+    x: -8.955
+    y: -3.602
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_06
+  name: 轨迹点 6
+  stand_pose:
+    x: -7.2
+    y: -1.9
+    z: 0.0
+    yaw: 2.0
+  lookat:
+    x: -7.616
+    y: -0.991
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_07
+  name: 轨迹点 7
+  stand_pose:
+    x: -6.65
+    y: -0.1
+    z: 0.0
+    yaw: 1.59
+  lookat:
+    x: -6.669
+    y: 0.9
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_08
+  name: 轨迹点 8
+  stand_pose:
+    x: -5.25
+    y: 1.65
+    z: 0.0
+    yaw: -3.066
+  lookat:
+    x: -6.247
+    y: 1.575
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_09
+  name: 轨迹点 9
+  stand_pose:
+    x: -4.1
+    y: 3.25
+    z: 0.0
+    yaw: 0.464
+  lookat:
+    x: -3.206
+    y: 3.698
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
+- id: wp_10
+  name: 轨迹点 10
+  stand_pose:
+    x: -1.75
+    y: 1.4
+    z: 0.0
+    yaw: 0.993
+  lookat:
+    x: -1.204
+    y: 2.238
+    z: 0.5
+  arrive_tolerance:
+    xy: 0.15
+    yaw: 0.2
+  safety_distance: 0.3
