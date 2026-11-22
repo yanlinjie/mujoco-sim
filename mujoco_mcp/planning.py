@@ -1,7 +1,5 @@
 # Copyright 2026 The RPent Authors.
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 """Read saved routes from the configured A* MCP service."""
 

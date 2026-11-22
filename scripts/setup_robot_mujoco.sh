@@ -14,11 +14,8 @@ if [[ ! -x "$ENV_DIR/bin/python" ]]; then
 fi
 export CYCLONEDDS_HOME="$DEPS/cyclonedds"
 # CycloneDDS embeds its build-time library prefix; do not reuse another project's wheel.
-# NumPy 2.2.6 also satisfies the shared vLLM 0.19.1 / Numba 0.61.2 runtime.
 uv pip install --python "$ENV_DIR/bin/python" --no-cache --reinstall-package cyclonedds \
-  mujoco==3.3.6 cyclonedds==0.10.2 numpy==2.2.6 scipy==1.17.1 \
-  PyYAML==6.0.3 flask==3.1.3 pillow==13.0.0 opencv-python-headless==5.0.0.93 glfw==2.11.0 \
-  websockets==16.1.1 casadi==3.8.2
+  -r "$ROOT/requirements.txt"
 # Editable mode retains the SDK's CRC shared libraries, omitted by its wheel metadata.
 uv pip install --python "$ENV_DIR/bin/python" --no-deps --editable "$ROBOT_ROOT/unitree_sdk2_python"
 
@@ -39,7 +36,7 @@ if [[ ! -f "$DEPS/sysroot/usr/include/eigen3/Eigen/Dense" ]]; then
   (cd "$DEPS" && apt-get download libeigen3-dev=3.4.0-2ubuntu2)
   dpkg-deb -x "$DEPS/libeigen3-dev_3.4.0-2ubuntu2_all.deb" "$DEPS/sysroot"
 fi
-GLFW_LIBRARY="$ENV_DIR/lib/python3.11/site-packages/glfw/x11/libglfw.so"
+GLFW_LIBRARY="$("$ENV_DIR/bin/python" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')/glfw/x11/libglfw.so"
 ln -sfn "$GLFW_LIBRARY" "$DEPS/lib/libglfw.so.3"
 cmake -S "$ROOT/scripts/robot_mujoco" -B "$RUN_DIR/native/build" \
   -DCMAKE_BUILD_TYPE=Release -DROBOT_ROOT="$ROBOT_ROOT" \

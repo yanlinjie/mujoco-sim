@@ -2,12 +2,13 @@
 
 仿真器、Go2 模型和 DDS 控制代码位于本仓库。地图包部署到 `slam_map_demo/maps/<地图>/<版本>/`，并通过 `ROBOT_MAP` 选择。A* 与仿真使用相同的地图 ID 和版本。
 
-在本目录准备和启动仿真。仿真已运行时可以直接启动 MCP。
+在本目录使用父目录的共享虚拟环境准备和启动仿真。准备脚本读取 Python 依赖清单，安装本地 Unitree SDK 并构建原生仿真器。仿真已运行时可以直接启动 MCP。 [MuJoCo 依赖](requirements.txt)
 
 ```bash
-export ROBOT_PYTHON="$PWD/../.venv/bin/python"
+export ROBOT_ENV_DIR="$PWD/../.venv"
 export ROBOT_MAP=room1110/2026-11-11.2
 bash scripts/setup_robot_mujoco.sh
+export ROBOT_PYTHON="$ROBOT_ENV_DIR/bin/python"
 bash scripts/run_robot_mujoco.sh start
 "$ROBOT_PYTHON" -m mujoco_mcp.server
 ```
