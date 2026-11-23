@@ -2,18 +2,28 @@
 
 仿真器、Go2 模型和 DDS 控制代码位于本仓库。地图包部署到 `slam_map_demo/maps/<地图>/<版本>/`，并通过 `ROBOT_MAP` 选择。A* 与仿真使用相同的地图 ID 和版本。
 
-在本目录使用父目录的共享虚拟环境准备和启动仿真。准备脚本读取 Python 依赖清单，安装本地 Unitree SDK 并构建原生仿真器。仿真已运行时可以直接启动 MCP。 [MuJoCo 依赖](requirements.txt)
+## 安装依赖
+
+Ubuntu x86_64 上需要 `uv`、`curl`、CMake 3.16+、C++17 编译器、Xvfb 和 `xauth`，以及 Boost.ProgramOptions、yaml-cpp 和 fmt 的开发包。脚本首次下载 Eigen 时，APT 源须提供 `libeigen3-dev=3.4.0-2ubuntu2`。
+
+在仓库根目录运行准备脚本。脚本默认创建本仓库的 Python 3.11 环境 `.venv-robot-mujoco`，安装 Python 依赖和 Unitree SDK，并编译仿真器。 [依赖清单](requirements.txt)
 
 ```bash
-export ROBOT_ENV_DIR="$PWD/../.venv"
-export ROBOT_MAP=room1110/2026-11-11.2
 bash scripts/setup_robot_mujoco.sh
-export ROBOT_PYTHON="$ROBOT_ENV_DIR/bin/python"
-bash scripts/run_robot_mujoco.sh start
-"$ROBOT_PYTHON" -m mujoco_mcp.server
 ```
 
-MCP 进程使用 [requirements-mcp.txt](requirements-mcp.txt)，默认在 `http://127.0.0.1:8791/mcp` 监听。它读取本机 8770 端口的仿真服务，并从 A* 的 `http://127.0.0.1:8790/mcp` 取完整规划。使用 `--sim-endpoint`、`--astar-mcp-url` 和 `--port` 可设置其他地址。
+## 启动
+
+仿真已运行时可以直接启动 MCP。
+
+```bash
+ROBOT_MAP=room1110/2026-11-11.2 bash scripts/run_robot_mujoco.sh start
+.venv-robot-mujoco/bin/python -m mujoco_mcp.server
+```
+
+`start` 会一起启动仿真和地图网页。要在局域网浏览器打开网页，给启动命令设置 `ROBOT_VIEWER_HOST` 为本机的局域网 IPv4 地址，访问该地址的 `8771` 端口。
+
+MCP 默认在 `http://127.0.0.1:8791/mcp` 监听，连接本机 8770 端口的仿真服务，并从 A* 的 `http://127.0.0.1:8790/mcp` 取完整规划。使用 `--sim-endpoint`、`--astar-mcp-url` 和 `--port` 可设置其他地址。
 
 - `get_pose()` 查询地图位姿。
 - `get_navigation_status()` 检查控制器及与 A* 的地图一致性。

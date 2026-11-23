@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the upstream HTTP service, native simulator and loopback browser stream.
+# Run the upstream HTTP service, native simulator and browser stream.
 set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 ROBOT_ROOT="${ROBOT_ROOT:-$ROOT}"
@@ -7,6 +7,11 @@ ROBOT_MAP="${ROBOT_MAP:-family_house/v1}"
 RUN_DIR="$ROOT/output/robot-mujoco-local"
 PYTHON="${ROBOT_PYTHON:-${ROBOT_ENV_DIR:-$ROOT/.venv-robot-mujoco}/bin/python}"
 SCRIPT="$ROOT/scripts/run_robot_mujoco.sh"
+VIEWER_HOST="${ROBOT_VIEWER_HOST:-127.0.0.1}"
+VIEWER_URL="http://$VIEWER_HOST:8771"
+if [[ "$VIEWER_HOST" == "0.0.0.0" ]]; then
+  VIEWER_URL="http://127.0.0.1:8771"
+fi
 mkdir -p "$RUN_DIR"
 export NO_PROXY="localhost,127.0.0.1,::1${NO_PROXY:+,$NO_PROXY}"
 export no_proxy="$NO_PROXY"
@@ -27,18 +32,20 @@ owned_stack() {
 case "${1:-start}" in
   start)
     if owned_stack; then
-      printf 'Stack is running; check status or open http://127.0.0.1:8771/ when ready.\n'
+      printf 'Stack is running. Use status to check it.\n'
       exit 0
     fi
     [[ -x "$RUN_DIR/native/build/unitree_mujoco" ]] || {
       printf 'Run bash scripts/setup_robot_mujoco.sh first.\n' >&2; exit 1;
     }
-    "$PYTHON" - <<'PY'
+    "$PYTHON" - "$VIEWER_HOST" <<'PY'
 import socket
-for port in (8770, 8771):
+import sys
+
+for host, port in (('127.0.0.1', 8770), (sys.argv[1], 8771)):
     with socket.socket() as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind(('127.0.0.1', port))
+        s.bind((host, port))
 PY
     if pgrep -x unitree_mujoco >/dev/null; then
       printf 'An existing Unitree simulator is using the shared DDS domain; stop it first.\n' >&2
@@ -56,7 +63,7 @@ print(process.pid)
 PY
 )"
     printf '%s\n' "$stack_pid" > "$RUN_DIR/stack.pid"
-    printf 'Starting stack, PID %s; log: %s/stack.log\n' "$stack_pid" "$RUN_DIR"
+    printf 'Starting stack, PID %s; viewer %s/; log: %s/stack.log\n' "$stack_pid" "$VIEWER_URL" "$RUN_DIR"
     ;;
   run)
     exec xvfb-run -a -s '-screen 0 1600x1000x24 -nolisten tcp' bash "$SCRIPT" _run
@@ -91,11 +98,11 @@ PY
     curl --noproxy '*' -fsS --max-time 120 -X POST \
       http://127.0.0.1:8770/simulator/start >"$RUN_DIR/start.json"
     MUJOCO_GL=egl "$PYTHON" "$ROBOT_ROOT/slam_map_demo/scripts/sim_stream.py" \
-      "$RUN_DIR/scene_slam_${ROBOT_MAP%%/*}.xml" --host 127.0.0.1 --port 8771 --fps 10 \
+      "$RUN_DIR/scene_slam_${ROBOT_MAP%%/*}.xml" --host "$VIEWER_HOST" --port 8771 --fps 10 \
       --map-dir "$ROBOT_ROOT/slam_map_demo/maps/$ROBOT_MAP" \
       --sim-service http://127.0.0.1:8770 >"$RUN_DIR/stream.log" 2>&1 &
     stream_pid=$!
-    "$PYTHON" - "$stream_pid" <<'PY'
+    "$PYTHON" - "$stream_pid" "$VIEWER_URL/health" <<'PY'
 import json, sys, time, urllib.request
 from pathlib import Path
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -105,7 +112,7 @@ while time.monotonic() < deadline:
     if not stat.exists() or stat.read_text().rsplit(')', 1)[1].split()[0] == 'Z':
         raise SystemExit('Stream process exited; see stream.log')
     try:
-        with opener.open('http://127.0.0.1:8771/health', timeout=3) as response:
+        with opener.open(sys.argv[2], timeout=3) as response:
             state = json.load(response)
         if state.get('ok') and state.get('simulator_state') and state.get('first_person', {}).get('ready'):
             break
@@ -115,14 +122,18 @@ while time.monotonic() < deadline:
 else:
     raise SystemExit('Stream not ready; see stream.log')
 PY
-    touch "$RUN_DIR/ready"
-    printf 'Ready: API http://127.0.0.1:8770; viewer http://127.0.0.1:8771/\n'
+    printf '%s\n' "$VIEWER_URL" >"$RUN_DIR/ready"
+    printf 'Ready: API http://127.0.0.1:8770; viewer %s/\n' "$VIEWER_URL"
     wait -n "$service_pid" "$stream_pid"
     ;;
   status)
+    viewer_url="$VIEWER_URL"
+    if owned_stack && [[ -s "$RUN_DIR/ready" ]]; then
+      viewer_url="$(< "$RUN_DIR/ready")"
+    fi
     curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8770/health
     printf '\n'
-    curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8771/health
+    curl --noproxy '*' -fsS --max-time 5 --url "$viewer_url/health"
     printf '\n'
     ;;
   stop)
