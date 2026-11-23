@@ -1,7 +1,6 @@
-"""Trajectory ownership, HTTP concurrency, state freshness and cleanup checks."""
+"""Trajectory ownership, state freshness and cleanup checks."""
 
 from concurrent.futures import ThreadPoolExecutor
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 import sys
 import tempfile
@@ -11,7 +10,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import sim_service
@@ -25,15 +23,12 @@ class ServiceTests(unittest.TestCase):
         root = Path(self.directory.name)
         (root / "meta.yaml").write_text("map_id: test\nversion: v1\n")
         with patch.object(sim_service.SimService, "_init_dds"):
-            self.service = sim_service.SimService(root, sys.executable, stream_port=0)
+            self.service = sim_service.SimService(root, sys.executable, work_dir=root)
         self.motion = state()
         self.service.motion_state = lambda: self.motion
         self.service.sim_alive = lambda: self.motion is not None
         self.service.other_controllers = lambda: []
         self.service.simulators = lambda: []
-        self.work_patch = patch.object(sim_service, "WORK", root)
-        self.work_patch.start()
-        self.addCleanup(self.work_patch.stop)
         self.backend_patch = patch.object(sim_service.control_runtime, "GaitBackend", FakeBackend)
         self.backend_patch.start()
         self.addCleanup(self.backend_patch.stop)
@@ -50,7 +45,7 @@ class ServiceTests(unittest.TestCase):
     def test_trajectory_owns_route_and_simulator_start(self):
         self.service.start_control({})
         self.error(409, self.service.start_walk, {"points": [[0, 0], [1, 0]]})
-        self.error(409, self.service._start_simulator, {"restart": True})
+        self.error(409, self.service.start_simulator, {"restart": True})
         self.error(409, self.service.start_control, {})
         self.assertEqual(self.service.health()["control_mode"], "trajectory")
 
@@ -132,31 +127,6 @@ class ServiceTests(unittest.TestCase):
                 return error.status
         with ThreadPoolExecutor(2) as executor:
             self.assertEqual(sorted(executor.map(lambda _: start(), range(2))), [200, 409])
-
-    def test_real_http_lifecycle(self):
-        server = ThreadingHTTPServer(("127.0.0.1", 0), sim_service.make_handler(self.service))
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        try:
-            with httpx.Client(base_url=f"http://127.0.0.1:{server.server_port}", trust_env=False) as client:
-                self.assertEqual(client.get("/control").status_code, 404)
-                created = client.post("/control/start", json={})
-                self.assertEqual(created.status_code, 200)
-                cid = created.json()["control_id"]
-                command = {"control_id": cid, "seq": 1, "frame": "map", "stamp_ns": time.time_ns(), "waypoints": [[0.5,0,0]]}
-                self.assertEqual(client.post("/control/command", json=command).status_code, 200)
-                self.assertEqual(client.post("/control/command", json=command).status_code, 409)
-                command["seq"], command["waypoints"] = 2, [[0.5,0]]
-                self.assertEqual(client.post("/control/command", json=command).status_code, 400)
-                stopped = client.post("/control/stop", json={"control_id": cid})
-                self.assertEqual(stopped.status_code, 200)
-                self.assertTrue(stopped.json()["stop_confirmed"])
-                self.assertEqual(client.post("/control/stop", json={"control_id": cid}).status_code, 200)
-                self.assertEqual(client.get("/health").json()["control_mode"], "idle")
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(2)
 
 
 class ValidationTests(unittest.TestCase):

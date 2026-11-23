@@ -186,7 +186,9 @@ def test_disconnecting_a_client_stops_the_owned_walk(clients, navigation_service
 
     async def exercise():
         pending = asyncio.create_task(
-            clients[1].invoke("follow_plan", {"plan_id": plan_id}, meta=meta)
+            clients[1].invoke(
+                "follow_plan", {"plan_id": plan_id}, meta=meta, terminate_on_close=False,
+            )
         )
         assert await asyncio.to_thread(state.started.wait, 2)
         pending.cancel()

@@ -328,14 +328,14 @@ def draw_trajectory(grid, tour, trajectory, image_path):
     print(f"轨迹图已保存到 {image_path}")
 
 
-def run_dds(map_dir, loop=False, back_and_forth=False, tour=None, hold=False):
+def run_dds(map_dir, loop=False, back_and_forth=False, tour=None, hold=False, *, domain=1):
     """hold：走完后保持站立直到 Ctrl+C（不加则站 3 秒后退出，退出后机器狗会趴下）。"""
     from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber, ChannelFactoryInitialize
     from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
     from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_, LowState_, SportModeState_
     from unitree_sdk2py.utils.crc import CRC
 
-    ChannelFactoryInitialize(1, "lo")
+    ChannelFactoryInitialize(domain, "lo")
     pub = ChannelPublisher("rt/lowcmd", LowCmd_)
     pub.Init()
     ChannelSubscriber("rt/lowstate", LowState_).Init(gait.LowStateHandler, 10)

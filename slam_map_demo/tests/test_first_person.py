@@ -1,21 +1,23 @@
 """Observation consistency and stale-state checks without a running simulator."""
 
+import asyncio
 import base64
 import math
-from pathlib import Path
-import sys
 import time
 from types import SimpleNamespace
 import unittest
 
 import cv2
-from flask import Flask
 import mujoco
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from first_person import FirstPersonFrames, add_observation_routes, configure_camera
-from sim_stream import StateMirror
+from mcp.server.fastmcp import FastMCP
+from starlette.testclient import TestClient
+
+from slam_map_demo.scripts.first_person import (
+    FirstPersonFrames, add_observation_routes, configure_camera, mjpeg_response,
+)
+from slam_map_demo.scripts.sim_stream import StateMirror
 
 
 MODEL = """<mujoco><worldbody><body name="base_link">
@@ -34,9 +36,10 @@ class FirstPersonTests(unittest.TestCase):
         self.set_state()
         self.camera = configure_camera(self.model, 480, 270, 112.0)
         self.frames = FirstPersonFrames(self.camera, "test.xml", {"map_id": "test", "map_version": "1"})
-        app = Flask(__name__)
-        add_observation_routes(app, self.frames)
-        self.client = app.test_client()
+        server = FastMCP("camera")
+        add_observation_routes(server, lambda: self.frames)
+        self.client = TestClient(server.streamable_http_app())
+        self.addCleanup(self.client.close)
         rgb = np.zeros((270, 480, 3), dtype=np.uint8)
         rgb[:, :, 0] = 240
         ok, encoded = cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
@@ -74,7 +77,7 @@ class FirstPersonTests(unittest.TestCase):
         self.set_state(position=(10, 20, 0.35), yaw=0)
         response = self.client.get("/observation")
         self.assertEqual(response.status_code, 200)
-        body = response.get_json()
+        body = response.json()
         self.assertEqual(body["pose"], snapshot["pose"])
         self.assertEqual(body["base_pose"], snapshot["base_pose"])
         self.assertEqual(body["stamp_ns"], snapshot["stamp_ns"])
@@ -91,24 +94,23 @@ class FirstPersonTests(unittest.TestCase):
     def test_jpeg_and_mjpeg_have_matching_frame_identity(self):
         snapshot = self.publish()
         response = self.client.get("/camera/front.jpg")
-        self.assertEqual(response.data, self.jpeg)
+        self.assertEqual(response.content, self.jpeg)
         self.assertEqual(response.headers["X-Capture-Time-Ns"], str(snapshot["stamp_ns"]))
         self.assertEqual(response.headers["X-Frame-Seq"], "1")
-        stream = self.client.get("/camera/front/stream", buffered=False)
-        try:
-            chunk = next(iter(stream.response))
-            self.assertIn(b"X-Frame-Seq: 1", chunk)
-            self.assertIn(self.jpeg, chunk)
-        finally:
-            stream.close()
+        async def read_frame():
+            return await anext(mjpeg_response(self.frames.latest).body_iterator)
+
+        chunk = asyncio.run(read_frame())
+        self.assertIn(b"X-Frame-Seq: 1", chunk)
+        self.assertIn(self.jpeg, chunk)
 
     def assert_unavailable(self):
-        for path in ("/observation", "/camera/front.jpg", "/camera/front/stream"):
+        for path in ("/observation", "/camera/front.jpg"):
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 503)
-                self.assertFalse(response.get_json()["ok"])
-                self.assertNotIn("image", response.get_json())
+                self.assertFalse(response.json()["ok"])
+                self.assertNotIn("image", response.json())
 
     def test_uninitialized_state_is_not_an_observation(self):
         self.assert_unavailable()

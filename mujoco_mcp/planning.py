@@ -10,7 +10,7 @@ from anyio import fail_after
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from .http_client import ServiceError, validate_endpoint
+from .protocol import ServiceError, validate_endpoint
 
 
 class PlanningClient:

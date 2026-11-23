@@ -1,19 +1,54 @@
 # Copyright 2026 The RPent Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Client for the external MuJoCo route-following service."""
+"""Validate the map and route evidence exchanged with MCP clients."""
 
 from __future__ import annotations
 
 import math
 from typing import Any
+from urllib.parse import urlsplit
 
-from .http_client import (
-    JsonServiceClient,
-    ServiceError,
-    finite_number,
-    map_identity,
-)
+
+class ServiceError(RuntimeError):
+    """A planning or simulation operation failed."""
+
+
+def validate_endpoint(endpoint: str) -> None:
+    """Require an HTTP service URL without credentials, query, or fragment."""
+    parsed = urlsplit(endpoint)
+    if (
+        parsed.scheme not in ("http", "https")
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("navigation service endpoints must be HTTP(S) base URLs")
+    # Accessing port also validates malformed and out-of-range port numbers.
+    _ = parsed.port
+
+
+def finite_number(value: Any, field: str) -> float:
+    """Read a finite JSON number, excluding booleans."""
+    if type(value) not in (int, float):
+        raise ServiceError(f"{field} must be a finite number")
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise ServiceError(f"{field} must be a finite number") from exc
+    if not math.isfinite(number):
+        raise ServiceError(f"{field} must be a finite number")
+    return number
+
+
+def map_identity(response: dict[str, Any]) -> tuple[str, str]:
+    """Require the map identity shared by planning and simulation responses."""
+    for field in ("map_id", "map_version"):
+        if not isinstance(response.get(field), str) or not response[field]:
+            raise ServiceError(f"{field} must be a nonempty string")
+    return response["map_id"], response["map_version"]
 
 
 def validate_pose(pose: Any) -> None:
@@ -68,43 +103,3 @@ def validate_walk_arrival(status: dict[str, Any], plan: dict[str, Any]) -> None:
         )
         if max(abs(yaw_error), abs(actual_error)) > 0.2 + 1e-9:
             raise ServiceError("navigation yaw error exceeds 0.2 radians")
-
-
-class SimulationClient(JsonServiceClient):
-    """Submit routes and query asynchronous walks, without managing simulators."""
-
-    def health(self) -> dict[str, Any]:
-        """Read map identity, simulator availability, and active walk state."""
-        result = self.request("GET", "/health")
-        map_identity(result)
-        if type(result.get("simulator_running")) is not bool:
-            raise ServiceError("simulator_running must be boolean")
-        return result
-
-    def get_pose(self) -> dict[str, Any]:
-        """Read a fresh pose; callers decide whether a fallen robot may proceed."""
-        result = self.request("GET", "/pose")
-        validate_pose(result)
-        return result
-
-    def preview(self, plan: dict[str, Any], *, timeout_s: float) -> dict[str, Any]:
-        """Run the service's independent preview without moving the live simulator."""
-        return self.request("POST", "/preview", plan, timeout_s=timeout_s)
-
-    def start_walk(self, plan: dict[str, Any]) -> dict[str, Any]:
-        """Submit once; an accepted response is not a completed walk."""
-        result = self.request("POST", "/walk", plan)
-        if not isinstance(result.get("walk_id"), str) or not result["walk_id"]:
-            raise ServiceError("accepted walk must contain a nonempty walk_id")
-        return result
-
-    def get_walk_status(self) -> dict[str, Any]:
-        """Read a running or finished walk without inferring arrival success."""
-        result = self.request("GET", "/walk")
-        if result.get("state") not in ("running", "finished"):
-            raise ServiceError("walk state must be running or finished")
-        return result
-
-    def stop_walk(self, walk_id: str) -> dict[str, Any]:
-        """Request a stop; the caller must subsequently confirm finished state."""
-        return self.request("POST", "/walk/stop", {"walk_id": walk_id})

@@ -11,7 +11,7 @@
                                方便直接接收 VLN 等其他导航算法的轨迹；坐标必须是地图坐标系）：
                                  1) [[x, y], ...]                              整条折线算一段
                                  2) {"points": [[x, y], ...], "final_yaw": 1.57} 同上，可带终点朝向
-                                 3) A* 规划服务 /plan 的完整返回（含 legs）     每个 leg 一段，
+                                 3) A* MCP get_plan 的完整返回（含 legs）     每个 leg 一段，
                                     终点朝向取 goal.stand_pose.yaw，并核对地图版本
 可选：
     --final-yaw YAW           走到最后一个点后原地转到此朝向（弧度）；不给则保持最后一小段的行进方向
@@ -24,8 +24,7 @@
 用法（在 slam_map_demo 目录下，P=/home/oc/miniconda3/envs/unitree-mujoco/bin/python）：
     # 接已启动的 unitree_mujoco 仿真器（DDS），走完后保持站立，Ctrl+C 退出
     $P -I -u scripts/follow_path.py dds <地图包> --points 0,0 1.5,0 1.5,2 --final-yaw 1.57
-    curl -s --noproxy '*' -X POST http://127.0.0.1:8765/plan -H 'Content-Type: application/json' \\
-         -d '{"start":{"x":0,"y":0},"goals":["广告牌"]}' | $P -I -u scripts/follow_path.py dds <地图包> --path-json -
+    $P -I -u scripts/follow_path.py dds <地图包> --path-json <get_plan 输出文件>
     # 不开窗口，在 MuJoCo 里快速跑一遍并输出轨迹图（用于先验证折线能不能走通）
     $P -I -u scripts/follow_path.py headless <地图包> --scene <场景 xml> --points ... [--image 轨迹.png] [--spawn X Y YAW]
 
@@ -200,6 +199,7 @@ def main():
     ap.add_argument("--result-json")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--no-hold", action="store_true", help="dds 模式走完后站 3 秒就退出（默认保持站立直到 Ctrl+C）")
+    ap.add_argument("--dds-domain", type=int, default=1)
     ap.add_argument("--scene", help="headless 模式的场景 xml")
     ap.add_argument("--image", help="headless 模式的轨迹图输出路径")
     ap.add_argument("--spawn", nargs=3, type=float, metavar=("X", "Y", "YAW"),
@@ -238,7 +238,7 @@ def main():
     ok = False
     try:
         if a.mode == "dds":
-            waypoint_tour.run_dds(str(map_dir), tour=tour, hold=not a.no_hold)
+            waypoint_tour.run_dds(str(map_dir), tour=tour, hold=not a.no_hold, domain=a.dds_domain)
             c = PathController.instance
             ok = c is not None and c.state == "done" and all(r[3] is not None for r in c.results)
         else:

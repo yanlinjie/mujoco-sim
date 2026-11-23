@@ -89,98 +89,9 @@ Python 版仿真器则需把 `simulate_python/config.py` 中的 `ROBOT_SCENE` �
 - 导航使用仿真器给出的真实位姿，没有接入 SLAM 定位。
 - 开环步态在真实机器人上不可用，仅用于仿真中验证地图和点位库。
 
-## 路径规划服务（按点位名称）
+## MCP 服务和网页
 
-`scripts/nav_service.py`：输入当前位置和一个或多个点位名称，按先后顺序用 A* 依次规划每一段，输出 JSON。
-名称可以是点位编号（`wp_02`）、名称、语义标签或名称中的一部分；有歧义或找不到时报错并列出可用点位。
-规划用的导航栅格与巡航脚本相同（`mujoco/collision_hfield.npz`）。
-完整的接口说明（地址、请求与返回字段、错误处理、调用示例）见 [导航规划服务接口文档.md](导航规划服务接口文档.md)。
-
-现在以 Docker 容器运行（代码和地图都打包在镜像里），启动、切换地图、重新构建见 [../nav_astar_docker/README.md](../nav_astar_docker/README.md)。下面是不用 Docker 时的宿主机命令（调试用）：
-
-```bash
-# 命令行规划一次
-$P -I scripts/nav_service.py plan maps/go2_room_selfbuilt/2026-11-09.2 --start 0 0 --goals 广告牌 厕所通道 [--step 0.1]
-
-# 启动局域网服务：HTTP 8765 端口，WebSocket 8766 端口，监听所有网卡
-$P -I -u scripts/nav_service.py serve maps/go2_room_selfbuilt/2026-11-09.2
-```
-
-其他设备调用（把 IP 换成运行服务的电脑）：
-
-```bash
-curl http://192.168.104.191:8765/waypoints
-curl "http://192.168.104.191:8765/plan?x=0&y=0&goals=广告牌,厕所通道"
-curl -X POST http://192.168.104.191:8765/plan -H 'Content-Type: application/json' \
-     -d '{"start": {"x": 0, "y": 0, "yaw": 0}, "goals": ["广告牌", "厕所通道"], "step": 0.2}'
-```
-
-```python
-import asyncio, json
-from websockets.asyncio.client import connect
-
-async def main():
-    # proxy=None：websockets 15 以后默认走系统代理环境变量，局域网直连时关掉
-    async with connect("ws://192.168.104.191:8766", proxy=None) as ws:
-        await ws.send(json.dumps({"type": "plan", "request_id": 1, "start": {"x": 0, "y": 0},
-                                  "goals": ["广告牌", "厕所通道"]}, ensure_ascii=False))
-        print(json.loads(await ws.recv()))
-
-asyncio.run(main())
-```
-
-返回中每段（`legs`）包含：目标点位（站位、到达后的朝向 `stand_pose.yaw`、看向的位置），
-拉直后的折线 `path`（第一个点为该段起点），每段折线的行进方向 `headings`，长度 `length`；
-请求带 `step` 时另有按该间距加密的 `dense_path`。坐标为地图坐标系，单位米、弧度。
-起点离障碍比避障半径（0.3 m）还近时，第一段先直线移到最近的可通行处，并在 `warnings` 中说明；
-起点在墙外等与目标不连通的区域时返回失败。
-
-## 仿真控制服务（局域网远程操作仿真）
-
-`scripts/sim_service.py`，HTTP 8770 端口，以用户级 systemd 服务 `robot-sim-service` 常驻（单元文件 `systemd/robot-sim-service.service`）。
-其他电脑通过它启动/重启仿真器、读位姿、提交路线让 Go2 行走（A* 返回或坐标点列）、查询进度、停止、不开窗口预演。
-启动仿真器时会同时拉起下文的浏览器推流服务（`--stream-port`，默认 8771，0 表示不推流），关闭仿真器时一并停止。
-接口说明见 [仿真控制服务接口文档.md](仿真控制服务接口文档.md)。A* 规划服务的 `goals` 也已支持坐标目标 `{"x":…, "y":…}`。
-
-本机副本增加持续轨迹控制：`POST /control/start` 默认创建 trajectory 会话，
-`POST /control/trajectory` 定期提交航点、坐标系及图像采集时间／位姿，服务内部 MPC 跟踪。
-`GET /control` 查询状态，`POST /control/stop` 等待站稳并释放控制权。
-轨迹默认自图像采集起 2 秒过期，过期后站立但不释放会话；与 `/walk` 互斥。
-持续控制只提供航点输入接口，不提供速度模式。协议及限速见上述接口文档，
-客户端和实际验证见 [本地部署说明](../../docs/LOCAL_DEPLOYMENT.md)。
-
-## 浏览器查看仿真画面（MJPEG 推流）
-
-`scripts/sim_stream.py`，HTTP 8771 端口。局域网内浏览器打开 `http://<服务器IP>:8771/` 即可观看；
-嵌到别的网页里只需 `<img src="http://<服务器IP>:8771/stream">`，单帧截图为 `/snapshot.jpg`，推流状态为 `/health`，
-实时状态与最近的滚动文字为 `/status?n=行数`。
-
-画面左上角显示年月日和时间；3D 画面下方拼接一个 7 行的滚动文字板块（画在视频帧里，帧大小为 1280×932）：
-每秒滚入一行实时状态（位置、朝向、速度、机身高度、倾斜、行走用时和阶段），
-仿真器连上或断开、开始行走、行走日志、行走结果、摔倒等事件用黄色或红色插入。行走信息读自仿真控制服务
-（`--sim-service`，默认 `http://127.0.0.1:8770`）的 `GET /walk`，连不上时只显示机身状态。
-`--panel-lines 0` 不显示文字板块，`--status-interval` 调整状态行的间隔。
-
-```bash
-$P -I -u scripts/sim_stream.py                     # 默认场景 scene_slam_room1110.xml，1280x720，15 帧/秒
-$P -I -u scripts/sim_stream.py scene_slam_xxx.xml --azimuth -60 --elevation -50 --zoom 1.2 --fps 10
-```
-
-C++ 仿真器的窗口属于另一个进程，读不到它的像素。本脚本加载同一个场景文件，只读订阅仿真器发出的
-`rt/lowstate`（12 个关节角、IMU 姿态）和 `rt/sportmodestate`（机身位置），把机器狗摆到同样的位姿，
-再用 `mujoco.Renderer` 离屏渲染（EGL），经 OpenCV 编码为 JPEG 后由 Flask 持续推送。不发控制指令，
-仿真器可以随时启停，没收到状态时画面左上角显示 `waiting for simulator state`。
-相机是固定的斜侧视角，按地图网格顶点自动调整视线中心和距离，使整张地图恰好放进画面；整图视角下机器狗只有约 30 像素宽。
-
-Go2 模型另有机身固定相机 `go2_front_rgb`，朝机身 +x，输出不带文字和点位标记的第一视角。
-浏览器打开 `http://127.0.0.1:8771/camera/front`，JPEG 为 `/camera/front.jpg`，
-MJPEG 为 `/camera/front/stream`。模型观测接口 `/observation` 将 JPEG base64、采集主机时间
-`stamp_ns`、同一渲染状态的 `pose`（IMU）和 `base_pose`（base_link）一起返回。
-尺寸默认 480×270，水平视场角 112°，可用 `--front-width`、`--front-height`、`--front-hfov` 调整。
-通过 `--map-dir <地图包>` 将地图编号与版本加入观测。图像或任一路 DDS 状态超过 1 秒时，
-观测及第一视角截图接口返回 HTTP 503，不返回旧帧。完整字段和本项目运行命令见
-[本地部署说明](../../docs/LOCAL_DEPLOYMENT.md)。
-带宽约 1.2 MB/s（每秒 15 帧、JPEG 质量 80），占用约半个 CPU 核。停止：`kill <pid>`（不要用 `pkill -f`，会误杀执行命令的 shell）。
+日常运行使用仓库根目录的 [MuJoCo MCP 启动命令](../README.zh-CN.md)。规划由独立的 A* MCP 提供，地图网页使用 MuJoCo MCP 的同一端口。
 
 ## 沿任意折线行走（按坐标）
 
@@ -191,10 +102,10 @@ Claude Code 技能 `astar-path-planning`、`mujoco-path-following`、`go2-mujoco
 # 读仿真器中机器狗的当前位姿（只读）：{"ok": true, "x": .., "y": .., "yaw": .., "tilt_deg": ..}
 $P -I scripts/sim_pose.py
 
-# 目标是坐标时的 A*（服务只接受名称）：与服务同一套导航栅格，输出 {"ok": true, "points": [[x, y], ...]}
+# 离线 A* 坐标规划：使用地图碰撞栅格，输出 {"ok": true, "points": [[x, y], ...]}
 $P -I scripts/plan_to_xy.py $MAP --start 0 0 --goals 2,3 -0.37,4.54 [--final-yaw 3.14] > /tmp/xy_plan.json
 
-# 沿折线行走：--points 直接给拐点，或 --path-json 读点列表 / plan_to_xy.py 输出 / 规划服务 /plan 的完整返回
+# 沿折线行走：--points 直接给拐点，或 --path-json 读点列表 / plan_to_xy.py 输出 / A* MCP get_plan 返回的完整路线
 $P -I -u scripts/follow_path.py dds $MAP --points 0,0 2,1 2,4 --final-yaw 1.57 --result-json /tmp/r.json [--no-hold]
 $P -I -u scripts/follow_path.py dds $MAP --path-json /tmp/nav_plan.json --result-json /tmp/r.json
 # 不开窗口预演，可指定出生位姿并输出轨迹图
@@ -244,7 +155,7 @@ curl -X POST http://<主机>:8767/initial_pose -H 'Content-Type: application/jso
 
 `status`：`INIT` 正在初始化（还没有位姿）、`RELOCALIZED` 刚完成初始化或重定位、`TRACKING` 正常、
 `PREDICT` 本帧配准不可信只用了里程计预测、`LOST` 判为丢失并开始重定位。
-坐标与 `nav_service.py` 的规划结果是同一个地图坐标系，可以直接把 `/pose` 的 x、y、yaw 作为规划起点。
+定位和 A* 规划使用同一个地图坐标系，可把定位得到的 x、y、yaw 作为规划起点。
 
 ### 本机验证
 

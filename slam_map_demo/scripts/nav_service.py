@@ -1,59 +1,21 @@
-"""按点位名称规划路径：输入当前位置和一个或多个目标点位名称，按先后顺序依次前往，
-用 A*（nav_grid.NavGrid.plan，与巡航脚本同一套导航栅格和避障标准）规划每一段，输出 JSON。
+"""Plan routes by waypoint name, coordinate or scene-graph target."""
 
-目标名称的匹配顺序：点位编号（wp_02）→ 名称完全相同 → 语义标签相同 → 名称包含输入的文字。
-同一级匹配到多个点位时报错并列出候选，不猜测。
-地图包带场景图（<地图包>/scene_graph/scene_graph.json）时，点位都匹配不到的名称再到场景图里按关键词
-找物体或区域（如 obj_17、"木箱"、"北侧通道里的纸箱"、"北侧通道"），目标为物体的到达站位；
-只用关键词，不用 CLIP 语义检索；同类物体有多个时同样报错并列出候选编号。
-
-两种用法：
-
-1) 命令行，直接打印 JSON：
-    python -I nav_service.py plan <地图包> --start X Y [--yaw YAW] --goals 广告牌 厕所通道 [--step 0.1]
-
-2) 局域网服务（同时提供 HTTP 和 WebSocket，监听所有网卡）：
-    python -I nav_service.py serve <地图包> [--host 0.0.0.0] [--http-port 8765] [--ws-port 8766]
-
-   HTTP：
-     GET  /health                  服务状态
-     GET  /waypoints               点位列表
-     POST /plan                    请求体 {"start": {"x": 0, "y": 0, "yaw": 0}, "goals": ["广告牌", "厕所通道"], "step": 0.1}
-     GET  /plan?x=0&y=0&goals=广告牌,厕所通道[&yaw=0][&step=0.1]
-   WebSocket（ws://<主机>:8766），每条消息一个 JSON：
-     {"type": "plan", "start": {...}, "goals": [...], "step": 0.1, "request_id": 可选，原样返回}
-     {"type": "waypoints"}   {"type": "health"}   {"type": "scene_graph"}（场景图中的物体和区域）
-
-请求字段：
-    start  当前位置，地图坐标系（米）；yaw 可省略（弧度）
-    goals  目标列表，按顺序前往。每一项是点位名称（字符串），或坐标 {"x": 2.0, "y": 3.0, "yaw": 可选}；
-           也接受逗号分隔的名称字符串
-    step   可选，>0 时把折线按此间距（米）加密成稠密路径点，放在每段的 dense_path 中
-
-返回（成功时 ok 为 true）：
-    legs[i].path        A* 规划并拉直后的折线 [[x, y], ...]，第一个点是该段起点，最后一个点是目标站位
-    legs[i].headings    折线每一段的行进方向（弧度），比 path 少一个
-    legs[i].goal        目标点位：编号、名称、站位、到达后应朝向的 yaw、看向的位置
-    total_length        各段长度之和（米）
-失败时 ok 为 false，error 说明原因（例如名称找不到、目标不可达），并给出可用的点位名称。
-"""
 import argparse
-import asyncio
 import json
 import math
 import re
 import sys
-import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 
 import numpy as np
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # -I 模式下需显式加入本目录
-from nav_grid import NavGrid, ROBOT_RADIUS  # noqa: E402
+if __package__:
+    from .nav_grid import NavGrid, ROBOT_RADIUS
+else:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from nav_grid import NavGrid, ROBOT_RADIUS
 
 
 class PlanError(Exception):
@@ -69,8 +31,11 @@ class Planner:
         self.waypoints = yaml.safe_load(open(self.map_dir / "waypoints.yaml"))["waypoints"]
         self.sg = None
         if (self.map_dir / "scene_graph" / "scene_graph.json").exists():
-            sys.path.insert(0, str(Path(__file__).resolve().parent / "scene_graph"))
-            from scene_graph import SceneGraph
+            if __package__:
+                from .scene_graph.scene_graph import SceneGraph
+            else:
+                sys.path.insert(0, str(Path(__file__).resolve().parent / "scene_graph"))
+                from scene_graph import SceneGraph
             self.sg = SceneGraph.load(self.map_dir)
             self.sg._grid = self.grid  # 与规划共用同一份导航栅格
 
@@ -293,119 +258,8 @@ def densify(path, step):
     return np.array(out)
 
 
-# ---------- HTTP ----------
-def make_http_handler(planner):
-    class Handler(BaseHTTPRequestHandler):
-        def parse_request(self):
-            # 网址里直接写中文时（curl 不会自动编码），http.server 把请求行按 Latin-1 解码后用 str.split() 切分，
-            # 而部分汉字的 UTF-8 字节（0x85、0xA0，如「充电桩」「食堂」）会被当成空白，整行被判为格式错误。
-            # 先把非 ASCII 字节转成网址编码，parse_qs 会再还原成中文
-            self.raw_requestline = re.sub(rb"[\x80-\xff]", lambda m: b"%%%02X" % m.group()[0], self.raw_requestline)
-            return super().parse_request()
-
-        def _send(self, obj, status=200):
-            body = json.dumps(obj, ensure_ascii=False).encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Access-Control-Allow-Origin", "*")  # 允许局域网网页直接调用
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _reply(self, req):
-            res = planner.handle(req)
-            self._send(res, 200 if res.get("ok") else 400)
-
-        def do_OPTIONS(self):
-            self.send_response(204)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
-            self.end_headers()
-
-        def do_GET(self):
-            # 网址里直接写中文时（curl 不会自动编码），原始 UTF-8 字节被 http.server 按 Latin-1 解码，
-            # 这里还原回来；已做网址编码（%E5...）的请求不受影响
-            try:
-                raw = self.path.encode("latin-1").decode("utf-8")
-            except UnicodeError:
-                raw = self.path
-            u = urlparse(raw)
-            q = {k: v[-1] for k, v in parse_qs(u.query).items()}
-            if u.path in ("/health", "/waypoints", "/scene_graph"):
-                return self._reply({"type": u.path[1:]})
-            if u.path == "/plan":
-                try:
-                    start = {"x": float(q["x"]), "y": float(q["y"])}
-                    if "yaw" in q:
-                        start["yaw"] = float(q["yaw"])
-                except (KeyError, ValueError):
-                    return self._send({"ok": False, "error": "需要数字参数 x、y，例如 /plan?x=0&y=0&goals=广告牌"}, 400)
-                return self._reply({"type": "plan", "start": start, "goals": q.get("goals", ""),
-                                    "step": q.get("step")})
-            self._send({"ok": False, "error": "可用接口：GET /health、GET /waypoints、GET /scene_graph、GET 或 POST /plan"}, 404)
-
-        def do_POST(self):
-            if urlparse(self.path).path != "/plan":
-                return self._send({"ok": False, "error": "POST 只支持 /plan"}, 404)
-            try:
-                req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-                if not isinstance(req, dict):
-                    raise ValueError("请求体应为 JSON 对象")
-            except ValueError as e:
-                return self._send({"ok": False, "error": f"请求体不是有效的 JSON：{e}"}, 400)
-            req.setdefault("type", "plan")
-            self._reply(req)
-
-        def log_message(self, fmt, *args):
-            print(f"[HTTP] {self.client_address[0]} {fmt % args}", flush=True)
-
-    return Handler
-
-
-# ---------- WebSocket ----------
-async def ws_main(planner, host, port):
-    from websockets.asyncio.server import serve
-
-    async def handler(conn):
-        peer = conn.remote_address[0] if conn.remote_address else "?"
-        async for msg in conn:
-            try:
-                req = json.loads(msg)
-                if not isinstance(req, dict):
-                    raise ValueError("消息应为 JSON 对象")
-            except ValueError as e:
-                await conn.send(json.dumps({"ok": False, "error": f"消息不是有效的 JSON：{e}"}, ensure_ascii=False))
-                continue
-            res = await asyncio.to_thread(planner.handle, req)  # A* 是计算密集的，放到线程里不阻塞其他连接
-            if "request_id" in req:
-                res["request_id"] = req["request_id"]
-            print(f"[WS] {peer} {req.get('type', 'plan')} {req.get('goals', '')} -> ok={res.get('ok')}", flush=True)
-            await conn.send(json.dumps(res, ensure_ascii=False))
-
-    async with serve(handler, host, port):
-        await asyncio.Future()
-
-
-def serve(planner, host, http_port, ws_port):
-    httpd = ThreadingHTTPServer((host, http_port), make_http_handler(planner))
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    print(f"地图 {planner.map_id}/{planner.map_version}，{len(planner.waypoints)} 个点位："
-          + "、".join(wp["name"] for wp in planner.waypoints))
-    if planner.sg is not None:
-        print(f"场景图：{len(planner.sg.regions)} 个区域、{len(planner.sg.objects)} 个物体，可作为目标名称")
-    print(f"HTTP      http://{host}:{http_port}  （/health、/waypoints、/scene_graph、/plan）")
-    print(f"WebSocket ws://{host}:{ws_port}", flush=True)
-    try:
-        asyncio.run(ws_main(planner, host, ws_port))
-    except KeyboardInterrupt:
-        pass
-    finally:
-        httpd.shutdown()
-
-
 def main():
-    ap = argparse.ArgumentParser(description="按点位名称做 A* 路径规划，输出 JSON；可作为局域网 HTTP/WebSocket 服务运行")
+    ap = argparse.ArgumentParser(description="按点位名称做 A* 路径规划，输出 JSON")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("plan", help="规划一次并打印 JSON")
     p.add_argument("map_dir")
@@ -413,22 +267,15 @@ def main():
     p.add_argument("--yaw", type=float)
     p.add_argument("--goals", nargs="+", required=True)
     p.add_argument("--step", type=float)
-    s = sub.add_parser("serve", help="启动 HTTP + WebSocket 服务")
-    s.add_argument("map_dir")
-    s.add_argument("--host", default="0.0.0.0")
-    s.add_argument("--http-port", type=int, default=8765)
-    s.add_argument("--ws-port", type=int, default=8766)
     a = ap.parse_args()
 
     planner = Planner(a.map_dir)
-    if a.cmd == "plan":
-        start = {"x": a.start[0], "y": a.start[1]}
-        if a.yaw is not None:
-            start["yaw"] = a.yaw
-        res = planner.handle({"type": "plan", "start": start, "goals": a.goals, "step": a.step})
-        print(json.dumps(res, ensure_ascii=False, indent=2))
-        sys.exit(0 if res["ok"] else 1)
-    serve(planner, a.host, a.http_port, a.ws_port)
+    start = {"x": a.start[0], "y": a.start[1]}
+    if a.yaw is not None:
+        start["yaw"] = a.yaw
+    res = planner.handle({"type": "plan", "start": start, "goals": a.goals, "step": a.step})
+    print(json.dumps(res, ensure_ascii=False, indent=2))
+    sys.exit(0 if res["ok"] else 1)
 
 
 if __name__ == "__main__":

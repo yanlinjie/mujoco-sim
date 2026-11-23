@@ -19,8 +19,8 @@ sys.path.insert(0, str(ROOT / "slam_map_demo/scripts"))
 from import_family_house import navigation_grid
 import import_family_house
 from follow_path import load_legs
-from nav_service import Planner
-from sim_stream import map_points
+from slam_map_demo.scripts.nav_service import Planner
+from slam_map_demo.scripts.sim_stream import map_points
 from sim_service import SimService
 
 

@@ -83,7 +83,8 @@ def main():
     lines = []   # 滚动文字 (文字, 类别)，与推流 StatusFeed 相同
     panel = None
     if a.view == "overview":
-        import sim_stream as ss   # 复用推流的取景与文字板块，保证视角一致
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from slam_map_demo.scripts import sim_stream as ss   # 复用推流的取景与文字板块，保证视角一致
         mujoco.mj_forward(model, data)
         cam = ss.fit_camera(model, ss.map_points(model, data), W, H,
                             -90.0 if a.azimuth is None else a.azimuth, -40.0 if a.elevation is None else a.elevation, 1.0)

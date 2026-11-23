@@ -1,12 +1,8 @@
-"""Prepare a copied Go2 scene and run its existing loopback HTTP service."""
+"""Prepare a Go2 scene from a map package and optionally validate its physics."""
 
 from __future__ import annotations
 
 import argparse
-import importlib.util
-import socket
-import subprocess
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -74,53 +70,14 @@ def validate_physics(scene: Path) -> None:
     )
 
 
-def serve(robot_root: Path, map_dir: Path, scene: Path, port: int, simulator_dir: Path) -> None:
-    """Reuse sim_service.py and its DDS controller, leaving streaming disabled."""
-    with socket.socket() as probe:
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        probe.bind(("127.0.0.1", port))
-    binary = simulator_dir / "unitree_mujoco"
-    check = subprocess.run(["ldd", str(binary)], capture_output=True, text=True)
-    diagnostic = check.stdout + check.stderr
-    if check.returncode or "not found" in diagnostic:
-        raise RuntimeError(f"native simulator dependencies are unavailable:\n{diagnostic}")
-
-    source = robot_root / "slam_map_demo/scripts/sim_service.py"
-    spec = importlib.util.spec_from_file_location("robot_local_sim_service", source)
-    if spec is None or spec.loader is None:
-        raise ImportError(source)
-    service = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(service)
-    upstream_class = service.SimService
-
-    class LocalSimService(upstream_class):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            # Both the native simulator and the preview accept an absolute scene.
-            self.scene_name = str(scene)
-            self.scene_path = scene
-
-    service.SimService = LocalSimService
-    service.SIM_DIR = simulator_dir
-    service.WORK = scene.parent / "work"
-    sys.argv = [str(source), str(map_dir), "--host", "127.0.0.1",
-                "--port", str(port), "--stream-port", "0"]
-    service.main()
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     repo = Path(__file__).resolve().parents[1]
     parser.add_argument("--robot-root", type=Path, default=repo)
-    parser.add_argument("--map", default="family_house/v1")
+    parser.add_argument("--map", default="room1110/2026-11-11.2")
     parser.add_argument("--output", type=Path, default=repo / "output/robot-mujoco-local")
     parser.add_argument("--validate", action="store_true")
-    parser.add_argument("--serve", action="store_true")
-    parser.add_argument("--port", type=int, default=8770)
-    parser.add_argument("--simulator-dir", type=Path)
     args = parser.parse_args()
-    if not 1 <= args.port <= 65535:
-        parser.error("port must be between 1 and 65535")
     robot_root = args.robot_root.resolve()
     maps_root = robot_root / "slam_map_demo/maps"
     map_dir = (maps_root / args.map).resolve()
@@ -130,9 +87,6 @@ def main() -> None:
         scene = prepare_scene(robot_root, map_dir, args.output.resolve())
         if args.validate:
             validate_physics(scene)
-        if args.serve:
-            simulator_dir = args.simulator_dir or (args.output / "native/build")
-            serve(robot_root, map_dir, scene, args.port, simulator_dir.resolve())
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
         parser.exit(1, f"Cannot run robot MuJoCo: {exc}\n")
 

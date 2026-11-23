@@ -1,15 +1,17 @@
 # Copyright 2026 The RPent Authors.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Expose external MuJoCo route execution over Streamable HTTP MCP."""
+"""Run Go2 simulation and its map viewer through one MCP service."""
 
 from __future__ import annotations
 
 import argparse
 import math
+import os
 import re
-from contextlib import ExitStack
+from contextlib import asynccontextmanager
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 from anyio import (
@@ -20,17 +22,21 @@ from anyio import (
     sleep,
     to_thread,
 )
+import uvicorn
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 from starlette.requests import Request
+from starlette.responses import FileResponse, Response
 
-from .http_client import ServiceError, finite_number, map_identity
 from .planning import PlanningClient
-from .simulation_client import (
-    SimulationClient,
+from .protocol import (
+    ServiceError,
+    finite_number,
+    map_identity,
     simulator_can_move,
     validate_walk_arrival,
 )
+from .simulation import Simulation
 
 
 def _run_id(ctx: Context) -> str | None:
@@ -43,7 +49,7 @@ def _run_id(ctx: Context) -> str | None:
     return tag
 
 
-async def _owned_status(simulation: SimulationClient, walk_id: str) -> dict[str, Any]:
+async def _owned_status(simulation: Simulation, walk_id: str) -> dict[str, Any]:
     status = await to_thread.run_sync(simulation.get_walk_status)
     if status.get("walk_id") != walk_id:
         raise ServiceError(f"simulation replaced walk {walk_id}")
@@ -51,7 +57,7 @@ async def _owned_status(simulation: SimulationClient, walk_id: str) -> dict[str,
 
 
 async def _wait_for_walk(
-    simulation: SimulationClient, walk_id: str, request: Request | None = None
+    simulation: Simulation, walk_id: str, request: Request | None = None
 ) -> dict[str, Any]:
     while True:
         status = await _owned_status(simulation, walk_id)
@@ -62,7 +68,7 @@ async def _wait_for_walk(
         await sleep(0.2)
 
 
-async def _stop_walk(simulation: SimulationClient, walk_id: str) -> dict[str, Any]:
+async def _stop_walk(simulation: Simulation, walk_id: str) -> dict[str, Any]:
     with fail_after(15, shield=True):
         status = await _owned_status(simulation, walk_id)
         if status["state"] == "running":
@@ -72,7 +78,7 @@ async def _stop_walk(simulation: SimulationClient, walk_id: str) -> dict[str, An
 
 
 def create_mujoco_mcp(
-    simulation: SimulationClient,
+    simulation: Simulation,
     planning: PlanningClient,
     *,
     host: str,
@@ -136,13 +142,13 @@ def create_mujoco_mcp(
                 partial(simulation.preview, route, timeout_s=walk_timeout_s)
             )
             preview = result.get("result")
-            if isinstance(preview, dict) and (
-                preview.get("ok") is False
-                or any(
+            if result.get("ok") is not True or (
+                isinstance(preview, dict)
+                and (preview.get("ok") is False or any(
                     leg.get("reached") is False
                     for leg in preview.get("legs", [])
                     if isinstance(leg, dict)
-                )
+                ))
             ):
                 raise ServiceError("preview did not confirm arrival")
             failed_previews.discard(plan_id)
@@ -262,25 +268,67 @@ def create_mujoco_mcp(
 
 
 def main() -> None:
-    """Run the MuJoCo MCP endpoint and close its clients on exit."""
+    root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sim-endpoint", default="http://127.0.0.1:8770")
+    parser.add_argument("--map", default=os.environ.get("ROBOT_MAP", "room1110/2026-11-11.2"))
+    parser.add_argument("--robot-root", type=Path, default=Path(os.environ.get("ROBOT_ROOT", root)))
+    parser.add_argument("--output", type=Path, default=root / "output/robot-mujoco-local")
+    parser.add_argument("--simulator-dir", type=Path, help="directory containing the built unitree_mujoco binary")
     parser.add_argument("--astar-mcp-url", default="http://127.0.0.1:8790/mcp")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8791, type=int)
+    parser.add_argument("--dds-domain", default=1, type=int)
     parser.add_argument("--walk-timeout-s", default=120.0, type=float)
+    parser.add_argument("--no-viewer", action="store_true")
+    parser.add_argument("--no-first-person", action="store_true")
     args = parser.parse_args()
-    with ExitStack() as clients:
-        simulation = SimulationClient(args.sim_endpoint, timeout_s=12)
-        clients.callback(simulation.close)
-        planner = PlanningClient(args.astar_mcp_url)
-        create_mujoco_mcp(
-            simulation,
-            planner,
-            host=args.host,
-            port=args.port,
-            walk_timeout_s=args.walk_timeout_s,
-        ).run(transport="streamable-http")
+    if not 0 <= args.dds_domain <= 232:
+        parser.error("--dds-domain must be between 0 and 232")
+    output = args.output.resolve()
+    robot_root = args.robot_root.resolve()
+    map_dir = (robot_root / "slam_map_demo/maps" / args.map).resolve()
+    simulator_dir = (args.simulator_dir or output / "native/build").resolve()
+    simulation = Simulation(robot_root, map_dir, output, simulator_dir, args.dds_domain)
+    server = create_mujoco_mcp(
+        simulation, PlanningClient(args.astar_mcp_url), host=args.host,
+        port=args.port, walk_timeout_s=args.walk_timeout_s,
+    )
+
+    @server.custom_route("/files/{name}", methods=["GET"])
+    async def preview_image(request: Request) -> Response:
+        name = request.path_params["name"]
+        path = simulation.work_dir / name
+        if not re.fullmatch(r"preview_[0-9]{6}_[0-9]+_[0-9]+\.png", name) or not path.is_file():
+            return Response(status_code=404)
+        return FileResponse(path, media_type="image/png")
+
+    viewer = None
+    if not args.no_viewer:
+        from slam_map_demo.scripts.sim_stream import Viewer
+
+        viewer = Viewer(simulation, first_person=not args.no_first_person)
+        viewer.add_routes(server)
+
+    app = server.streamable_http_app()
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        try:
+            await to_thread.run_sync(simulation.start)
+            if viewer is not None:
+                viewer.start()
+            async with server.session_manager.run():
+                yield
+        finally:
+            with CancelScope(shield=True):
+                try:
+                    if viewer is not None:
+                        await to_thread.run_sync(viewer.close)
+                finally:
+                    await to_thread.run_sync(simulation.close)
+
+    app.router.lifespan_context = lifespan
+    uvicorn.run(app, host=args.host, port=args.port, timeout_graceful_shutdown=5)
 
 
 if __name__ == "__main__":

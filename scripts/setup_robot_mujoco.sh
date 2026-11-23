@@ -45,5 +45,5 @@ cmake -S "$ROOT/scripts/robot_mujoco" -B "$RUN_DIR/native/build" \
   -DLOCAL_INCLUDE_DIR="$DEPS/sysroot/usr/include"
 cmake --build "$RUN_DIR/native/build" --parallel 4
 cp "$ROBOT_ROOT/unitree_mujoco/simulate/config.yaml" "$RUN_DIR/native/config.yaml"
-"$ENV_DIR/bin/python" "$ROOT/scripts/robot_mujoco_local.py" --robot-root "$ROBOT_ROOT" --validate
+"$ENV_DIR/bin/python" "$ROOT/scripts/robot_mujoco_local.py" --robot-root "$ROBOT_ROOT" --map "${ROBOT_MAP:-room1110/2026-11-11.2}" --validate
 uv pip freeze --python "$ENV_DIR/bin/python" > "$RUN_DIR/requirements.freeze.txt"

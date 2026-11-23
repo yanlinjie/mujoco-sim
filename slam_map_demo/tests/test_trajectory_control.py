@@ -1,21 +1,17 @@
 """Waypoint protocol, capture-time alignment, rolling MPC and HTTP contract."""
 
 from concurrent.futures import Future
-from http.server import ThreadingHTTPServer
 import math
 from pathlib import Path
 import sys
-import tempfile
 import threading
 import time
 import unittest
 from unittest.mock import patch
 
-import httpx
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import sim_service
 import control_runtime
 import trajectory_control as tc
 import trajectory_mpc as mpc
@@ -232,47 +228,3 @@ class MpcTests(unittest.TestCase):
                     self.assertEqual(tracker.error, "")
                 finally:
                     tracker.close()
-
-
-class HttpTests(unittest.TestCase):
-    def test_default_mode_accepts_waypoints_through_both_endpoints(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root/'meta.yaml').write_text('map_id: test\nversion: v1\n')
-            with patch.object(sim_service.SimService, '_init_dds'), \
-                 patch.object(sim_service, 'WORK', root), \
-                 patch.object(sim_service.control_runtime, 'GaitBackend', FakeBackend), \
-                 patch.object(sim_service.trajectory_control, 'make_tracker', FakeTracker):
-                service = sim_service.SimService(root, sys.executable, 0)
-                motion = state()
-                motion['base_pose'] = {'x': 0, 'y': 0, 'yaw': 0}
-                service.motion_state = lambda: motion
-                service.sim_alive = lambda: True
-                service.other_controllers = service.simulators = lambda: []
-                server = ThreadingHTTPServer(('127.0.0.1', 0), sim_service.make_handler(service))
-                thread = threading.Thread(target=server.serve_forever, daemon=True)
-                thread.start()
-                try:
-                    with httpx.Client(base_url=f'http://127.0.0.1:{server.server_port}', trust_env=False) as client:
-                        created = client.post('/control/start', json={})
-                        self.assertEqual(created.status_code, 200)
-                        self.assertEqual(created.json()['mode'], 'trajectory')
-                        cid = created.json()['control_id']
-                        wait_for(lambda: service.get_control()['ready'])
-                        for legacy_config in [{'mode':'velocity'}, {'command_timeout_s':.5}, {'mode':'trajectory'}]:
-                            self.assertEqual(client.post('/control/start', json=legacy_config).status_code, 400)
-                        for seq, endpoint in enumerate(['/control/trajectory', '/control/command']):
-                            response = client.post(endpoint, json={'control_id': cid, **packet(seq=seq)})
-                            self.assertEqual(response.status_code, 200, response.text)
-                            self.assertEqual(response.json()['accepted']['seq'], seq)
-                        self.assertEqual(client.post('/control/command', json={'control_id': cid, 'seq': 10, 'vx': .1, 'wz': 0}).status_code, 400)
-                        self.assertEqual(client.post('/control/trajectory', json={'control_id': cid, 'seq': 10, 'vx': .1, 'wz': 0}).status_code, 400)
-                        self.assertEqual(client.post('/walk', json={'points': [[0,0],[1,0]]}).status_code, 409)
-                        stopped = client.post('/control/stop', json={'control_id': cid})
-                        self.assertEqual(stopped.status_code, 200)
-                        self.assertTrue(stopped.json()['stop_confirmed'])
-                finally:
-                    server.shutdown()
-                    service.close()
-                    server.server_close()
-                    thread.join(2)

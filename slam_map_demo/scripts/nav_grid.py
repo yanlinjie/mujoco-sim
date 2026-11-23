@@ -7,7 +7,10 @@ import heapq
 import numpy as np
 from scipy import ndimage
 
-from map_to_mujoco import FLOOR_MAX_HEIGHT
+if __package__:
+    from .map_to_mujoco import FLOOR_MAX_HEIGHT
+else:
+    from map_to_mujoco import FLOOR_MAX_HEIGHT
 
 OBSTACLE_HEIGHT = FLOOR_MAX_HEIGHT  # 高于此值视为障碍；地毯（6–9 cm）可以走上去
 ROBOT_RADIUS = 0.30      # 规划时的硬性避障半径（Go2 半宽约 0.2 m，加余量）
